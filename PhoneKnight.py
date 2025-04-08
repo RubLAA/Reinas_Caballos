@@ -95,6 +95,8 @@ class EnhancedKnightVisualizer:
 
         print("Movimientos válidos desde 6:", self.knight_logic.movements[6])
 
+        self.running_animation = True  # Nuevo flag de control
+
     def load_knight_sprite(self):
         """Carga y escala el sprite del caballo"""
         self.knight_img = pygame.image.load('caballero.png').convert_alpha()
@@ -145,6 +147,8 @@ class EnhancedKnightVisualizer:
 
     def update_knight_position(self):
         """Movimiento mejorado con verificación de posición exacta"""
+        if not self.running_animation:
+            return
         if not self.paths:
             return
             
@@ -167,12 +171,20 @@ class EnhancedKnightVisualizer:
             self.knight_pos += direction * min(10, (target_pos - self.knight_pos).length()/2)
             self.knight_angle = sin(pygame.time.get_ticks() * 0.008) * 15
 
+        else:
+            # Finalizar animación cuando se completan todas las rutas
+            self.running_animation = False
+            pygame.time.wait(2000)  # Espera 2 segundos antes de cerrar
+            pygame.quit()
+            sys.exit()
+
     def next_path(self):
-        """Reinicio mejorado con verificación de posición inicial"""
-        self.current_path_index = (self.current_path_index + 1) % len(self.paths)
-        self.current_step = 0
-        self.knight_pos = Vector2(self.key_positions[0]).copy()
-        print(f"Iniciando nueva ruta: {self.paths[self.current_path_index]}")
+        if self.current_path_index < len(self.paths) - 1:
+            self.current_path_index += 1
+            self.current_step = 0
+            self.knight_pos = Vector2(self.key_positions[0])
+        else:
+            self.running_animation = False
 
     def draw_knight(self):
         """Dibuja el caballo con rotación"""
@@ -183,7 +195,7 @@ class EnhancedKnightVisualizer:
     def run(self):
         """Bucle principal de ejecución"""
         clock = pygame.time.Clock()
-        while True:
+        while self.running_animation:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
