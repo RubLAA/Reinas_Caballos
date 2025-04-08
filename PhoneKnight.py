@@ -1,8 +1,9 @@
 import pygame
 import sys
-from math import sin
+import random
 from pygame.math import Vector2
-
+from math import sin
+from colorsys import hsv_to_rgb
 class PhoneKnight:
     def __init__(self):
         self.movements = {
@@ -97,6 +98,11 @@ class EnhancedKnightVisualizer:
 
         self.running_animation = True  # Nuevo flag de control
 
+        self.current_trail = []  # Almacena puntos de la estela
+        self.trail_colors = []  # Almacena colores por ruta
+        self.current_color = (255, 0, 0)  # Color inicial
+        self.trail_history = []  # Lista de tuplas (color, puntos)
+
     def load_knight_sprite(self):
         """Carga y escala el sprite del caballo"""
         self.knight_img = pygame.image.load('caballero.png').convert_alpha()
@@ -125,6 +131,12 @@ class EnhancedKnightVisualizer:
         for i, path in enumerate(valid_paths):
             print(f"Ruta {i+1}: {path}")
             
+        # Generar colores HSV únicos
+        self.route_colors = [
+            tuple(int(c * 255) for c in hsv_to_rgb(i/len(valid_paths), 0.8, 0.8))
+            for i in range(len(valid_paths))
+        ]
+
         return valid_paths
 
     def draw_interface(self):
@@ -147,10 +159,15 @@ class EnhancedKnightVisualizer:
 
     def update_knight_position(self):
         """Movimiento mejorado con verificación de posición exacta"""
-        if not self.running_animation:
+
+        if not self.paths or not self.running_animation:
             return
-        if not self.paths:
-            return
+            
+        current_path = self.paths[self.current_path_index]
+        
+        if self.current_step < len(current_path) - 1:
+            # Añadir punto a la estela actual
+            self.current_trail.append(Vector2(self.knight_pos))
             
         current_path = self.paths[self.current_path_index]
         
@@ -172,11 +189,24 @@ class EnhancedKnightVisualizer:
             self.knight_angle = sin(pygame.time.get_ticks() * 0.008) * 15
 
         else:
-            # Finalizar animación cuando se completan todas las rutas
-            self.running_animation = False
-            pygame.time.wait(2000)  # Espera 2 segundos antes de cerrar
-            pygame.quit()
-            sys.exit()
+            if self.current_trail:
+                self.trail_history.append((
+                    self.route_colors[self.current_path_index],  # Color fijo
+                    self.current_trail.copy()
+                ))
+                self.current_trail.clear()
+            self.next_path()
+
+    def draw_trails(self):
+        # Dibujar todas las estelas históricas
+        for color, trail in self.trail_history:
+            if len(trail) >= 2:
+                pygame.draw.aalines(self.screen, color, False, trail, 3)
+        
+        # Dibujar estela actual
+        if len(self.current_trail) >= 2:
+            current_color = self.route_colors[self.current_path_index]
+            pygame.draw.aalines(self.screen, current_color, False, self.current_trail, 3)
 
     def next_path(self):
         if self.current_path_index < len(self.paths) - 1:
@@ -198,11 +228,14 @@ class EnhancedKnightVisualizer:
         while self.running_animation:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    pygame.time.wait(15000)
                     pygame.quit()
                     sys.exit()
             
             self.update_knight_position()
+            self.screen.fill(self.colors['background'])
             self.draw_interface()
+            self.draw_trails()  # Dibujar antes que el caballo
             self.draw_knight()
             pygame.display.flip()
             clock.tick(30)

@@ -3,7 +3,7 @@ from PhoneKnight import EnhancedKnightVisualizer
 
 if __name__ == "__main__":
     # Para el caballo
-    visualizer = EnhancedKnightVisualizer(k=1)
+    visualizer = EnhancedKnightVisualizer(k=2)
     visualizer.run()
     
     # Para las reinas
