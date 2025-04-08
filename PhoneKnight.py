@@ -32,7 +32,7 @@ class PhoneKnight:
 
 class AnimatedKnight:
     def __init__(self, start_pos):
-        self.original_image = pygame.image.load('caballero.png')  # Asegúrate de tener una imagen
+        self.original_image = pygame.image.load('sprites/caballero.png')  # Asegúrate de tener una imagen
         self.image = pygame.transform.scale(self.original_image, (40, 40))
         self.rect = self.image.get_rect(center=start_pos)
         self.current_pos = start_pos
@@ -94,8 +94,6 @@ class EnhancedKnightVisualizer:
         self.current_path_index = 0
         self.current_step = 0
 
-        print("Movimientos válidos desde 6:", self.knight_logic.movements[6])
-
         self.running_animation = True  # Nuevo flag de control
 
         self.current_trail = []  # Almacena puntos de la estela
@@ -105,38 +103,39 @@ class EnhancedKnightVisualizer:
 
     def load_knight_sprite(self):
         """Carga y escala el sprite del caballo"""
-        self.knight_img = pygame.image.load('caballero.png').convert_alpha()
+        self.knight_img = pygame.image.load('sprites/caballero.png').convert_alpha()
         self.knight_img = pygame.transform.scale(self.knight_img, (40, 40))
 
     def generate_valid_paths(self):
-        """Genera caminos usando BFS para mejor control"""
+        """Genera TODOS los caminos válidos desde TODAS las posiciones iniciales"""
         from collections import deque
         
         valid_paths = []
-        queue = deque([(0, [0])])
         
-        while queue:
-            current_pos, path = queue.popleft()
+        # Explorar desde todas las posiciones iniciales (0-9, excepto 5)
+        start_positions = [n for n in range(10) if n != 5]  # El 5 no tiene movimientos
+        
+        for start in start_positions:
+            queue = deque([(start, [start])])
             
-            if len(path) == self.k + 1:
-                valid_paths.append(path)
-                continue
+            while queue:
+                current_pos, path = queue.popleft()
                 
-            # Ordenar movimientos para mejor visualización
-            sorted_moves = sorted(self.knight_logic.movements[current_pos])
-            for move in sorted_moves:
-                queue.append((move, path + [move]))
+                if len(path) == self.k + 1:
+                    valid_paths.append(path)
+                    continue
+                    
+                for move in sorted(self.knight_logic.movements[current_pos]):
+                    queue.append((move, path + [move]))
         
-        print("Rutas generadas:")
-        for i, path in enumerate(valid_paths):
-            print(f"Ruta {i+1}: {path}")
-            
-        # Generar colores HSV únicos
-        self.route_colors = [
-            tuple(int(c * 255) for c in hsv_to_rgb(i/len(valid_paths), 0.8, 0.8))
-            for i in range(len(valid_paths))
-        ]
-
+        # Generar colores únicos para todas las rutas
+        if valid_paths:
+            self.route_colors = [
+                tuple(int(c * 255) for c in hsv_to_rgb(i/len(valid_paths), 0.8, 0.8))
+                for i in range(len(valid_paths))
+            ]
+        
+        print(f"Total de rutas generadas: {len(valid_paths)}")
         return valid_paths
 
     def draw_interface(self):
@@ -161,25 +160,22 @@ class EnhancedKnightVisualizer:
         if not self.running_animation:
             return
             
+        if not self.paths or self.current_path_index >= len(self.paths):
+            self.running_animation = False
+            return
+            
         current_path = self.paths[self.current_path_index]
         
         if self.current_step < len(current_path) - 1:
-            # Añadir punto a la estela actual
             self.current_trail.append(Vector2(self.knight_pos))
             
             target_num = current_path[self.current_step + 1]
             target_pos = self.key_positions[target_num]
             
-            # Movimiento y verificación de posición
             if (self.knight_pos - target_pos).length() <= 2:
                 self.current_step += 1
                 if self.current_step >= len(current_path) - 1:
-                    # Guardar estela con el color CORRECTO de la ruta actual
-                    self.trail_history.append((
-                        self.route_colors[self.current_path_index],  # Color fijo para esta ruta
-                        self.current_trail.copy()
-                    ))
-                    self.current_trail.clear()
+                    self.save_current_trail()
                     self.next_path()
                 return
                 
@@ -188,13 +184,25 @@ class EnhancedKnightVisualizer:
             self.knight_pos += direction * min(150, direction.length())
             self.knight_angle = sin(pygame.time.get_ticks() * 0.008) * 15
 
+
     def next_path(self):
-        if self.current_path_index < len(self.paths) - 1:
-            self.current_path_index += 1  # Actualizar índice ANTES de reiniciar
+        """Prepara la siguiente ruta o finaliza"""
+        self.current_path_index += 1
+        if self.current_path_index < len(self.paths):
             self.current_step = 0
-            self.knight_pos = Vector2(self.key_positions[0])
+            start_pos = self.paths[self.current_path_index][0]  # Primera posición de la ruta
+            self.knight_pos = Vector2(self.key_positions[start_pos])
         else:
             self.running_animation = False
+
+    def save_current_trail(self):
+        """Guarda la estela actual con su color correspondiente"""
+        if self.current_trail and self.current_path_index < len(self.route_colors):
+            self.trail_history.append((
+                self.route_colors[self.current_path_index],
+                self.current_trail.copy()
+            ))
+            self.current_trail.clear()
 
     def draw_trails(self):
         # Dibujar todas las estelas históricas
