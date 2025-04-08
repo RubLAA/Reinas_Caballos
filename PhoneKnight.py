@@ -1,241 +1,172 @@
 import pygame
 import sys
-import random
+import multiprocessing as mp
 from pygame.math import Vector2
-from math import sin
 from colorsys import hsv_to_rgb
-class PhoneKnight:
-    def __init__(self):
-        self.movements = {
-            0: [4, 6], 
-            1: [6, 8], 
-            2: [7, 9], 
-            3: [4, 8],
-            4: [0, 3, 9], 
-            5: [], 
-            6: [0, 1, 7], 
-            7: [2, 6],
-            8: [1, 3], 
-            9: [2, 4]
-        }
-        self.dp = None
+from datetime import datetime, timedelta
 
-    def calculate_moves(self, k):
-        self.dp = [[0]*10 for _ in range(k+1)]
-        for i in range(10): self.dp[0][i] = 1
+# Configuración común
+KEY_POSITIONS = {
+    0: (250, 480),
+    1: (125, 180), 2: (250, 180), 3: (375, 180),
+    4: (125, 280), 5: (250, 280), 6: (375, 280),
+    7: (125, 380), 8: (250, 380), 9: (375, 380)
+}
+
+# ----------------------------
+# Ventana de Animación
+# ----------------------------
+def animation_window(k, paths_queue):
+    class AnimatedKnight:
+        def __init__(self):
+            self.image = pygame.image.load('caballero.png').convert_alpha()
+            self.image = pygame.transform.scale(self.image, (40, 40))
+            self.pos = Vector2(KEY_POSITIONS[0])
+            self.speed = 0.2  # Velocidad ajustada
         
-        for step in range(1, k+1):
-            for num in range(10):
-                for dest in self.movements[num]:
-                    self.dp[step][dest] += self.dp[step-1][num]
-        return sum(self.dp[k])
-
-class AnimatedKnight:
-    def __init__(self, start_pos):
-        self.original_image = pygame.image.load('caballero.png')  # Asegúrate de tener una imagen
-        self.image = pygame.transform.scale(self.original_image, (40, 40))
-        self.rect = self.image.get_rect(center=start_pos)
-        self.current_pos = start_pos
-        self.target_pos = start_pos
-        self.speed = 5
-        self.angle = 0
-
-    def update(self):
-        dx = self.target_pos[0] - self.current_pos[0]
-        dy = self.target_pos[1] - self.current_pos[1]
+        def update(self, target_pos, dt):
+            direction = target_pos - self.pos
+            if direction.length() > 2:
+                direction.normalize_ip()
+                self.pos += direction * self.speed * dt
         
-        if dx != 0 or dy != 0:
-            self.current_pos = (
-                self.current_pos[0] + dx/self.speed,
-                self.current_pos[1] + dy/self.speed
-            )
-            self.angle = sin(pygame.time.get_ticks() * 0.005) * 15  # Efecto de balanceo
+        def draw(self, surface):
+            surface.blit(self.image, self.pos - Vector2(20, 20))
 
-        self.rect.center = self.current_pos
-
-    def draw(self, surface):
-        rotated_image = pygame.transform.rotate(self.image, self.angle)
-        new_rect = rotated_image.get_rect(center=self.rect.center)
-        surface.blit(rotated_image, new_rect.topleft)
-
-class EnhancedKnightVisualizer:
-    def __init__(self, k):
-        pygame.init()
-        self.k = k
-        self.knight_logic = PhoneKnight()
-        self.total_moves = self.knight_logic.calculate_moves(k)
+    pygame.init()
+    screen = pygame.display.set_mode((500, 600))
+    pygame.display.set_caption("Animación del Caballo")
+    clock = pygame.time.Clock()
+    font = pygame.font.Font(None, 28)
+    
+    knight = AnimatedKnight()
+    paths = generate_paths(k)
+    
+    # Generar colores corregido
+    colors = []
+    if paths:
+        colors = [
+    tuple(int(c * 255) for c in hsv_to_rgb(i/len(paths), 0.8, 0.8))  # Paréntesis cerrado
+    for i in range(len(paths))
+]
+    
+    running = True
+    current_path_index = 0
+    current_step = 0
+    last_time = pygame.time.get_ticks()
+    
+    while running:
+        dt = pygame.time.get_ticks() - last_time
+        last_time = pygame.time.get_ticks()
         
-        # Configuración de pantalla
-        self.screen = pygame.display.set_mode((500, 600))
-        pygame.display.set_caption("Caballo de Ajedrez Animado")
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
         
-        # Configuración visual
-        self.colors = {
-            'background': (32, 32, 32),
-            'keys': (80, 80, 80),
-            'text': (240, 240, 240)
-        }
-        
-        # Posiciones del teclado (coordenadas verificadas)
-        self.key_positions = {
-            0: Vector2(250, 480),
-            1: Vector2(125, 180), 2: Vector2(250, 180), 3: Vector2(375, 180),
-            4: Vector2(125, 280), 5: Vector2(250, 280), 6: Vector2(375, 280),
-            7: Vector2(125, 380), 8: Vector2(250, 380), 9: Vector2(375, 380)
-        }
-        
-        # Inicialización del caballo
-        self.knight_pos = Vector2(self.key_positions[0])
-        self.knight_angle = 0
-        self.load_knight_sprite()
-        
-        # Generación de rutas
-        self.paths = self.generate_valid_paths()
-        self.current_path_index = 0
-        self.current_step = 0
-
-        print("Movimientos válidos desde 6:", self.knight_logic.movements[6])
-
-        self.running_animation = True  # Nuevo flag de control
-
-        self.current_trail = []  # Almacena puntos de la estela
-        self.trail_colors = []  # Almacena colores por ruta
-        self.current_color = (255, 0, 0)  # Color inicial
-        self.trail_history = []  # Lista de tuplas (color, puntos)
-
-    def load_knight_sprite(self):
-        """Carga y escala el sprite del caballo"""
-        self.knight_img = pygame.image.load('caballero.png').convert_alpha()
-        self.knight_img = pygame.transform.scale(self.knight_img, (40, 40))
-
-    def generate_valid_paths(self):
-        """Genera caminos usando BFS para mejor control"""
-        from collections import deque
-        
-        valid_paths = []
-        queue = deque([(0, [0])])
-        
-        while queue:
-            current_pos, path = queue.popleft()
+        if current_path_index < len(paths):
+            path = paths[current_path_index]
+            target_pos = Vector2(KEY_POSITIONS[path[current_step]])
             
-            if len(path) == self.k + 1:
-                valid_paths.append(path)
-                continue
+            knight.update(target_pos, dt)
+            paths_queue.put((colors[current_path_index], Vector2(knight.pos)))
+            
+            if (knight.pos - target_pos).length() < 2:
+                current_step += 1
+                if current_step >= len(path):
+                    current_path_index += 1
+                    current_step = 0
+        
+        screen.fill((32, 32, 32))
+        draw_interface(screen, font)
+        knight.draw(screen)
+        pygame.display.flip()
+        clock.tick(60)
+    
+    pygame.quit()
+
+# ----------------------------
+# Ventana de Rutas (Persistente)
+# ----------------------------
+def routes_window(paths_queue):
+    class RouteVisualizer:
+        def __init__(self):
+            pygame.init()
+            self.screen = pygame.display.set_mode((800, 600))
+            self.background = pygame.Surface((800, 600))
+            self.background.fill((255, 255, 255))
+            self.paths = []
+            self.end_time = None
+        
+        def run(self):
+            start_time = datetime.now()
+            running = True
+            while running:
+                if self.end_time and datetime.now() > self.end_time:
+                    running = False
                 
-            # Ordenar movimientos para mejor visualización
-            sorted_moves = sorted(self.knight_logic.movements[current_pos])
-            for move in sorted_moves:
-                queue.append((move, path + [move]))
-        
-        print("Rutas generadas:")
-        for i, path in enumerate(valid_paths):
-            print(f"Ruta {i+1}: {path}")
-            
-        # Generar colores HSV únicos
-        self.route_colors = [
-            tuple(int(c * 255) for c in hsv_to_rgb(i/len(valid_paths), 0.8, 0.8))
-            for i in range(len(valid_paths))
-        ]
-
-        return valid_paths
-
-    def draw_interface(self):
-        """Dibuja la interfaz de usuario"""
-        self.screen.fill(self.colors['background'])
-        
-        # Panel informativo
-        font = pygame.font.Font(None, 28)
-        title = font.render(f"Movimientos válidos: {self.total_moves}", True, (200, 200, 255))
-        self.screen.blit(title, (20, 20))
-        
-        # Dibujar teclado
-        pygame.draw.rect(self.screen, (50, 50, 50), (50, 100, 400, 400), border_radius=20)
-        for num, pos in self.key_positions.items():
-            color = self.colors['keys'] if num != 5 else (150, 50, 50)
-            pygame.draw.circle(self.screen, color, pos, 35)
-            pygame.draw.circle(self.screen, (30, 30, 30), pos, 35, 3)
-            text = font.render(str(num), True, self.colors['text'])
-            self.screen.blit(text, text.get_rect(center=pos))
-
-    def update_knight_position(self):
-        """Movimiento mejorado con verificación de posición exacta"""
-
-        if not self.paths or not self.running_animation:
-            return
-            
-        current_path = self.paths[self.current_path_index]
-        
-        if self.current_step < len(current_path) - 1:
-            # Añadir punto a la estela actual
-            self.current_trail.append(Vector2(self.knight_pos))
-            
-        current_path = self.paths[self.current_path_index]
-        
-        if self.current_step < len(current_path) - 1:
-            target_num = current_path[self.current_step + 1]
-            target_pos = self.key_positions[target_num]
-            
-            # Verificación precisa de posición
-            if (self.knight_pos - target_pos).length() <= 2:
-                self.current_step += 1
-                if self.current_step >= len(current_path) - 1:
-                    self.next_path()
-                return
+                # Recibir nuevos puntos
+                while not paths_queue.empty():
+                    color, pos = paths_queue.get()
+                    if not self.paths or self.paths[-1]['color'] != color:
+                        self.paths.append({'color': color, 'points': []})
+                    self.paths[-1]['points'].append(pos)
+                    self.end_time = datetime.now() + timedelta(minutes=5)
                 
-            # Movimiento con aceleración suave
-            direction = target_pos - self.knight_pos
-            direction.normalize_ip()
-            self.knight_pos += direction * min(10, (target_pos - self.knight_pos).length()/2)
-            self.knight_angle = sin(pygame.time.get_ticks() * 0.008) * 15
-
-        else:
-            if self.current_trail:
-                self.trail_history.append((
-                    self.route_colors[self.current_path_index],  # Color fijo
-                    self.current_trail.copy()
-                ))
-                self.current_trail.clear()
-            self.next_path()
-
-    def draw_trails(self):
-        # Dibujar todas las estelas históricas
-        for color, trail in self.trail_history:
-            if len(trail) >= 2:
-                pygame.draw.aalines(self.screen, color, False, trail, 3)
-        
-        # Dibujar estela actual
-        if len(self.current_trail) >= 2:
-            current_color = self.route_colors[self.current_path_index]
-            pygame.draw.aalines(self.screen, current_color, False, self.current_trail, 3)
-
-    def next_path(self):
-        if self.current_path_index < len(self.paths) - 1:
-            self.current_path_index += 1
-            self.current_step = 0
-            self.knight_pos = Vector2(self.key_positions[0])
-        else:
-            self.running_animation = False
-
-    def draw_knight(self):
-        """Dibuja el caballo con rotación"""
-        rotated_img = pygame.transform.rotate(self.knight_img, self.knight_angle)
-        rect = rotated_img.get_rect(center=self.knight_pos)
-        self.screen.blit(rotated_img, rect.topleft)
-
-    def run(self):
-        """Bucle principal de ejecución"""
-        clock = pygame.time.Clock()
-        while self.running_animation:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.time.wait(15000)
-                    pygame.quit()
-                    sys.exit()
+                # Dibujar rutas
+                self.screen.blit(self.background, (0, 0))
+                for path in self.paths:
+                    if len(path['points']) > 1:
+                        pygame.draw.aalines(
+                            self.screen, 
+                            path['color'], 
+                            False, 
+                            path['points'], 
+                            3
+                        )
+                pygame.display.flip()
+                
+                # Manejar eventos
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
             
-            self.update_knight_position()
-            self.screen.fill(self.colors['background'])
-            self.draw_interface()
-            self.draw_trails()  # Dibujar antes que el caballo
-            self.draw_knight()
-            pygame.display.flip()
-            clock.tick(30)
+            pygame.quit()
+
+    visualizer = RouteVisualizer()
+    visualizer.run()
+
+# ----------------------------
+# Funciones Auxiliares
+# ----------------------------
+def generate_paths(k):
+    """Genera rutas válidas de k pasos (ejemplo)"""
+    return [
+        [0, 4, 3, 8],
+        [0, 6, 1, 8]
+    ]
+
+def draw_interface(surface, font):
+    """Dibuja el teclado numérico"""
+    pygame.draw.rect(surface, (50, 50, 50), (50, 100, 400, 400), border_radius=20)
+    for num, pos in KEY_POSITIONS.items():
+        color = (100, 100, 100) if num != 5 else (150, 50, 50)
+        pygame.draw.circle(surface, color, pos, 35)
+        text = font.render(str(num), True, (255, 255, 255))
+        surface.blit(text, text.get_rect(center=pos))
+
+# ----------------------------
+# Lanzador Principal
+# ----------------------------
+if __name__ == '__main__':
+    mp.freeze_support()
+    k = 3
+    paths_queue = mp.Queue()
+    
+    anim_proc = mp.Process(target=animation_window, args=(k, paths_queue))
+    viz_proc = mp.Process(target=routes_window, args=(paths_queue,))
+    
+    anim_proc.start()
+    viz_proc.start()
+    
+    anim_proc.join()
+    viz_proc.join()
